@@ -1,0 +1,11 @@
+# Bỏ qua dữ liệu thô và thư mục đầu ra
+data/
+outputs/
+
+# Bỏ qua các file môi trường và cache của Python
+__pycache__/
+*.pyc
+.env
+.venv/
+env/
+.ipynb_checkpoints/
