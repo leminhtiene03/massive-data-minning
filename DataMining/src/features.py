@@ -1,4 +1,5 @@
 import gc
+<<<<<<< HEAD
 import os
 import polars as pl
 from datetime import datetime, date
@@ -6,11 +7,24 @@ from datetime import datetime, date
 # Import cấu hình
 from src.config import (
     LAST_TRAIN_DATE, DATE_7D, DATE_14D, DATE_30D,
+=======
+import polars as pl
+from datetime import datetime
+from src.config import (
+    LAST_TRAIN_DATE, DATE_7D, DATE_14D, DATE_30D,
+    VAL_START_DATE, VAL_END_DATE,
+>>>>>>> 16749963e5caa79fb5f645de6374aa10dce318ff
     FEAT_DIR, CAND_DIR, V2_DIR
 )
 
 def compute_customer_stats(train_tx_clean, customers):
+<<<<<<< HEAD
     print(f'[{datetime.now().strftime("%H:%M:%S")}] Đang tính toán Customer stats...')
+=======
+    """Tính toán các chỉ số lịch sử mua hàng của khách hàng"""
+    print(f'[{datetime.now().strftime("%H:%M:%S")}] Đang tính toán Customer stats...')
+    
+>>>>>>> 16749963e5caa79fb5f645de6374aa10dce318ff
     def cust_stats(tx, days, suffix):
         cutoff = LAST_TRAIN_DATE - pl.duration(days=days)
         return (tx.filter(pl.col('t_dat') > cutoff)
@@ -50,7 +64,13 @@ def compute_customer_stats(train_tx_clean, customers):
     return cust_7d, cust_14d, cust_30d, last_purchase, customers_feat
 
 def compute_article_stats(train_tx_clean, articles, customers_feat):
+<<<<<<< HEAD
     print(f'[{datetime.now().strftime("%H:%M:%S")}] Đang tính toán Article stats...')
+=======
+    """Tính toán các chỉ số thống kê của sản phẩm"""
+    print(f'[{datetime.now().strftime("%H:%M:%S")}] Đang tính toán Article stats...')
+    
+>>>>>>> 16749963e5caa79fb5f645de6374aa10dce318ff
     def article_pop(tx, days, suffix):
         cutoff = LAST_TRAIN_DATE - pl.duration(days=days)
         return (tx.filter(pl.col('t_dat') > cutoff)
@@ -81,6 +101,10 @@ def compute_article_stats(train_tx_clean, articles, customers_feat):
     return art_pop_7d, art_pop_14d, art_age_pop, art_last_sold, articles_feat
 
 def compute_time_decay_and_trend(train_tx_clean):
+<<<<<<< HEAD
+=======
+    """Tính toán trọng số thời gian (Time-decay) và Xu hướng bán hàng (Sales trend)"""
+>>>>>>> 16749963e5caa79fb5f645de6374aa10dce318ff
     decay_path = FEAT_DIR / 'user_item_decay.parquet'
     if not decay_path.exists():
         user_item_decay = (
@@ -91,7 +115,12 @@ def compute_time_decay_and_trend(train_tx_clean):
             .agg(pl.col('decay_weight').sum().alias('user_item_decay_weight'))
         )
         user_item_decay.write_parquet(decay_path)
+<<<<<<< HEAD
     
+=======
+        print(f'[{datetime.now().strftime("%H:%M:%S")}] Time-decay saved')
+
+>>>>>>> 16749963e5caa79fb5f645de6374aa10dce318ff
     trend_path = FEAT_DIR / 'art_sales_trend.parquet'
     if not trend_path.exists():
         art_alltime = train_tx_clean.group_by('article_id').len().rename({'len': 'art_alltime_sales'})
@@ -103,6 +132,7 @@ def compute_time_decay_and_trend(train_tx_clean):
             .select(['article_id', 'sales_trend'])
         )
         art_trend.write_parquet(trend_path)
+<<<<<<< HEAD
 
 def compute_interaction_tables(train_tx_clean, articles):
     if not (FEAT_DIR / 'user_bought.parquet').exists():
@@ -200,6 +230,29 @@ def compute_source_pivot():
 def build_features_v2(candidates_df, stats_dict, label_tx=None):
     cids = candidates_df['customer_id'].unique()
 
+=======
+        print(f'[{datetime.now().strftime("%H:%M:%S")}] Sales trend saved')
+
+# -------------------------------------------------------------------------
+# Hàm build_features_v2: Gắn đặc trưng vào tập ứng viên (Candidates)
+# (Bạn cần gọi hàm này trong vòng lặp chia chunk lúc train/test giống file gốc)
+# -------------------------------------------------------------------------
+
+def build_features_v2(candidates_df, stats_dict, label_tx=None):
+    """
+    stats_dict chứa các dataframe đã được precompute từ các hàm trên:
+    { 'customers_feat': customers_feat, 'cust_7d': cust_7d, ... }
+    """
+    cids = candidates_df['customer_id'].unique()
+
+    # Load các bảng từ ổ cứng để tránh RAM đầy
+    _decay = pl.read_parquet(FEAT_DIR / 'user_item_decay.parquet').filter(pl.col('customer_id').is_in(cids))
+    _trend = pl.read_parquet(FEAT_DIR / 'art_sales_trend.parquet')
+    
+    # Do giới hạn hiển thị, giả định các bảng user_bought, source_pivot, emb_sim đã được tạo
+    # và đọc tương tự như _decay.
+    
+>>>>>>> 16749963e5caa79fb5f645de6374aa10dce318ff
     feats = (
         candidates_df.select(['customer_id', 'article_id']).unique()
         .join(stats_dict['customers_feat'].select(['customer_id', 'age', 'is_club_member', 'fashion_news_freq', 'age_group']), on='customer_id', how='left')
@@ -212,6 +265,7 @@ def build_features_v2(candidates_df, stats_dict, label_tx=None):
         .join(stats_dict['art_age_pop'], on=['age_group', 'article_id'], how='left')
         .join(stats_dict['art_last_sold'], on='article_id', how='left')
         .join(stats_dict['articles_feat'], on='article_id', how='left')
+<<<<<<< HEAD
     )
 
     # Nối các file có sẵn
@@ -277,6 +331,22 @@ def build_features_v2(candidates_df, stats_dict, label_tx=None):
         if c in feats.columns: feats = feats.with_columns(pl.col(c).fill_null(0.0))
     for c in large_cols:
         if c in feats.columns: feats = feats.with_columns(pl.col(c).fill_null(9999.0))
+=======
+        .join(_trend, on='article_id', how='left')
+        .join(_decay, on=['customer_id', 'article_id'], how='left')
+    )
+
+    # Điền giá trị Null
+    zero_cols = ['n_purchases_7d', 'n_purchases_14d', 'n_purchases_30d', 'n_unique_articles_30d', 
+                 'article_popularity_7d', 'article_popularity_14d', 'article_popularity_age_group_14d', 
+                 'user_item_decay_weight', 'sales_trend']
+    large_cols = ['days_since_last_purchase', 'days_since_article_last_sold']
+
+    for c in zero_cols:
+        if c in feats.columns: feats = feats.with_columns(pl.col(c).fill_null(0))
+    for c in large_cols:
+        if c in feats.columns: feats = feats.with_columns(pl.col(c).fill_null(999))
+>>>>>>> 16749963e5caa79fb5f645de6374aa10dce318ff
         
     feats = feats.with_columns([
         pl.col('avg_price_7d').fill_null(pl.col('avg_price_7d').mean()),
@@ -290,6 +360,7 @@ def build_features_v2(candidates_df, stats_dict, label_tx=None):
         feats = feats.join(bought, on=['customer_id', 'article_id'], how='left')
         feats = feats.with_columns(pl.col('label').fill_null(0))
 
+<<<<<<< HEAD
     return feats
 
 
@@ -340,3 +411,7 @@ def build_train_features(transactions, train_tx_clean, articles, customers):
     
     # ĐÃ XÓA PHẦN GỘP FILE (sink_parquet) TẠI ĐÂY ĐỂ CHỐNG TRÀN RAM
     print(f'[{datetime.now().strftime("%H:%M:%S")}] Hoàn thành build toàn bộ train features theo từng Chunk!')
+=======
+    del _decay, _trend
+    return feats
+>>>>>>> 16749963e5caa79fb5f645de6374aa10dce318ff

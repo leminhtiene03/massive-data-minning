@@ -104,8 +104,12 @@ def score_and_rank(train_tx, customers):
         .head(12)['article_id'].to_list()
     )
 
+<<<<<<< HEAD
     ranked_cids = ranked.select('customer_id').unique()
     missing = customers.select('customer_id').join(ranked_cids, on='customer_id', how='anti')['customer_id'].to_list()
+=======
+    missing = [c for c in customers['customer_id'].to_list() if c not in set(ranked['customer_id'].to_list())]
+>>>>>>> 16749963e5caa79fb5f645de6374aa10dce318ff
     if missing:
         print(f'Có {len(missing)} khách hàng trống, áp dụng Fallback...')
         ranked = pl.concat([ranked, pl.DataFrame({'customer_id': missing, 'top12': [global_top12] * len(missing)})])

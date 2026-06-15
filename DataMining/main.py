@@ -1,7 +1,10 @@
 from datetime import datetime
 from src.data_loader import load_data
 from src.candidates import run_candidate_generation
+<<<<<<< HEAD
 from src.features import build_train_features  # <-- Đã thêm import hàm này
+=======
+>>>>>>> 16749963e5caa79fb5f645de6374aa10dce318ff
 from src.train import sample_negatives, build_lgb_dataset, train_lgbm_model
 from src.predict import build_test_features, score_and_rank
 from src.evaluate import evaluate_map, run_ablation_study
@@ -30,9 +33,12 @@ def main():
         print("\n" + "="*50)
         print("PHẦN 2: HUẤN LUYỆN MÔ HÌNH (MODEL TRAINING)")
         print("="*50)
+<<<<<<< HEAD
         
         build_train_features(transactions, train_tx_clean, articles, customers)
 
+=======
+>>>>>>> 16749963e5caa79fb5f645de6374aa10dce318ff
         sampled_paths = sample_negatives(ratio=10)
         lgb_train = build_lgb_dataset(sampled_paths)
         train_lgbm_model(lgb_train)

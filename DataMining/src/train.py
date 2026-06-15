@@ -8,7 +8,11 @@ from datetime import datetime
 
 from src.config import V2_DIR, MOD_DIR, FEATURE_COLS_V2
 
+<<<<<<< HEAD
 def sample_negatives(ratio=20, seed=42): # [ĐÃ SỬA]: Tăng từ 10 lên 20
+=======
+def sample_negatives(ratio=10, seed=42):
+>>>>>>> 16749963e5caa79fb5f645de6374aa10dce318ff
     """
     Lấy mẫu âm (Negative Sampling) theo từng chunk để cân bằng dữ liệu train.
     """
@@ -74,6 +78,7 @@ def train_lgbm_model(lgb_train, lgb_val=None):
     Thiết lập tham số và huấn luyện mô hình xếp hạng.
     """
     print(f'[{datetime.now().strftime("%H:%M:%S")}] Bắt đầu huấn luyện LightGBM...')
+<<<<<<< HEAD
     # [ĐÃ SỬA]: Thay đổi toàn bộ bộ tham số để tăng độ chính xác
     params = {  
         'objective': 'lambdarank',
@@ -84,6 +89,20 @@ def train_lgbm_model(lgb_train, lgb_val=None):
         'min_child_samples': 30,      # Tăng số mẫu tối thiểu trên mỗi lá (20 -> 30)
         'verbose': -1,
         'device': 'cpu', 
+=======
+    params = {
+        'objective': 'lambdarank',
+        'metric': 'ndcg',
+        'ndcg_eval_at': [12],
+        'learning_rate': 0.05,
+        'num_leaves': 127,
+        'min_child_samples': 20,
+        'verbose': -1,
+        # Nếu chạy trên máy không có GPU, hãy comment 3 dòng dưới lại
+        'device': 'gpu',
+        'gpu_platform_id': 0,
+        'gpu_device_id': 0,
+>>>>>>> 16749963e5caa79fb5f645de6374aa10dce318ff
     }
 
     valid_sets = [lgb_val] if lgb_val is not None else [lgb_train]
@@ -91,7 +110,11 @@ def train_lgbm_model(lgb_train, lgb_val=None):
     model = lgb.train(
         params, 
         lgb_train,
+<<<<<<< HEAD
         num_boost_round=1000,         # [ĐÃ SỬA]: Tăng số vòng huấn luyện lên 1000
+=======
+        num_boost_round=500,
+>>>>>>> 16749963e5caa79fb5f645de6374aa10dce318ff
         valid_sets=valid_sets,
         callbacks=[lgb.early_stopping(50, verbose=True), lgb.log_evaluation(50)],
     )
@@ -109,8 +132,12 @@ def train_lgbm_model(lgb_train, lgb_val=None):
 
 if __name__ == "__main__":
     # Luồng chạy chuẩn
+<<<<<<< HEAD
     # [ĐÃ SỬA]: Gọi ratio=20 thay vì 10
     sampled_paths = sample_negatives(ratio=20)
+=======
+    sampled_paths = sample_negatives(ratio=10)
+>>>>>>> 16749963e5caa79fb5f645de6374aa10dce318ff
     lgb_train = build_lgb_dataset(sampled_paths)
     
     # Ở đây tạm thời bỏ qua tập lgb_val để train thẳng. 
