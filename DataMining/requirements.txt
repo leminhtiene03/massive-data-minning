@@ -1,0 +1,11 @@
+polars==1.35.2
+numpy
+pandas
+scipy
+lightgbm
+implicit
+faiss-cpu
+sentence-transformers
+open_clip_torch
+Pillow
+torch
