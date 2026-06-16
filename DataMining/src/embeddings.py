@@ -1,118 +1,129 @@
+import os
 import gc
 import numpy as np
 import polars as pl
 from datetime import datetime
 from pathlib import Path
 
-# Import thư mục cấu hình
-from src.config import EMB_DIR, DATA_DIR
+# Vô hiệu hóa log cảnh báo khó chịu của TensorFlow
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+import tensorflow as tf
+from tensorflow.keras.applications.resnet50 import ResNet50, preprocess_input
+from tensorflow.keras.preprocessing import image
+from sklearn.decomposition import PCA
+
+# Import từ file config của bạn
+from src.config import DATA_DIR
 from src.data_loader import load_data
 
-def generate_text_embeddings(articles):
+def generate_resnet_pca_embeddings(images_dir, articles_df, batch_size=256):
     """
-    Sử dụng SentenceTransformers để đọc hiểu mô tả sản phẩm 
-    và biến chúng thành vector (Text Embeddings).
+    Dùng ResNet50 trích xuất đặc trưng ảnh, sau đó dùng PCA nén xuống 32 chiều
+    và lưu thành file image_features_32d.parquet.
     """
-    out_path = EMB_DIR / 'article_embeddings.npy'
+    out_path = DATA_DIR / 'image_features_32d.parquet'
     if out_path.exists():
-        print('article_embeddings.npy đã tồn tại — Bỏ qua chạy lại.')
+        print(f'[{datetime.now().strftime("%H:%M:%S")}] File 32d đã tồn tại. Bỏ qua chạy lại.')
         return
 
-    print(f'[{datetime.now().strftime("%H:%M:%S")}] Bắt đầu sinh Text Embeddings...')
+    print(f'[{datetime.now().strftime("%H:%M:%S")}] Khởi tạo mô hình ResNet50 (Pre-trained ImageNet)...')
+    # Load ResNet50 bỏ đi lớp phân loại cuối, dùng Average Pooling để ra vector 2048 chiều
+    base_model = ResNet50(weights='imagenet', include_top=False, pooling='avg')
+
+    article_ids = articles_df['article_id'].unique().to_list()
+    valid_article_ids = []
+    features_list = []
+    missing_count = 0
+
+    print(f'[{datetime.now().strftime("%H:%M:%S")}] Bắt đầu quét ảnh (Tổng: {len(article_ids):,} sản phẩm)...')
     
-    # Gom các trường text lại thành một câu miêu tả hoàn chỉnh
-    articles_text = articles.with_columns(
-        (pl.col('prod_name').fill_null('') + ' ' +
-         pl.col('product_type_name').fill_null('') + ' ' +
-         pl.col('colour_group_name').fill_null('') + ' ' +
-         pl.col('department_name').fill_null('') + ' ' +
-         pl.col('detail_desc').fill_null('')).alias('text')
-    ).select(['article_id', 'text'])
+    batch_imgs = []
+    batch_ids = []
 
-    article_ids_list = articles_text['article_id'].to_list()
-    texts = articles_text['text'].to_list()
+    # Hàm xử lý từng mẻ (batch) để GPU/CPU chạy nhanh hơn
+    def process_batch(b_imgs, b_ids):
+        batch_tensor = np.vstack(b_imgs)
+        # ResNet50 trích xuất ra vector 2048 chiều
+        features = base_model.predict(batch_tensor, batch_size=len(b_imgs), verbose=0)
+        features_list.extend(features)
+        valid_article_ids.extend(b_ids)
 
-    print(f'Số lượng sản phẩm cần nhúng: {len(article_ids_list):,}')
+    for idx, aid in enumerate(article_ids):
+        # Bộ dữ liệu H&M thường chia folder theo 3 số đầu của article_id
+        folder_name = str(aid)[:3]
+        img_path = os.path.join(images_dir, folder_name, f"{aid}.jpg")
+        
+        # Nếu bạn gộp tất cả ảnh vào 1 thư mục không chia folder thì dùng dòng này:
+        # img_path = os.path.join(images_dir, f"{aid}.jpg")
 
-    # Khởi tạo mô hình ngôn ngữ
-    from sentence_transformers import SentenceTransformer
-    st_model = SentenceTransformer('all-MiniLM-L6-v2')
+        try:
+            # Load và resize ảnh về 224x224 chuẩn của ResNet
+            img = image.load_img(img_path, target_size=(224, 224))
+            x = image.img_to_array(img)
+            x = np.expand_dims(x, axis=0)
+            x = preprocess_input(x) # Chuẩn hóa màu sắc
+
+            batch_imgs.append(x)
+            batch_ids.append(aid)
+
+            # Đủ 1 mẻ (batch) thì đem đi dự đoán
+            if len(batch_imgs) >= batch_size:
+                process_batch(batch_imgs, batch_ids)
+                batch_imgs, batch_ids = [], []
+
+            if idx % 10000 == 0 and idx > 0:
+                print(f'  -> Đã quét: {idx:,} / {len(article_ids):,}')
+
+        except Exception:
+            missing_count += 1
+
+    # Xử lý mẻ cuối cùng còn sót lại
+    if len(batch_imgs) > 0:
+        process_batch(batch_imgs, batch_ids)
+
+    print(f'[{datetime.now().strftime("%H:%M:%S")}] Trích xuất ResNet xong. Ảnh hợp lệ: {len(valid_article_ids):,}. Ảnh lỗi/thiếu: {missing_count:,}')
     
-    # Chạy encode (Quá trình này có thể tốn vài phút)
-    text_embs = st_model.encode(
-        texts, batch_size=512, show_progress_bar=True,
-        normalize_embeddings=True, convert_to_numpy=True
-    )
+    # Giải phóng RAM mô hình Deep Learning
+    del base_model, batch_imgs, batch_ids
+    gc.collect()
 
-    # Lưu ra đĩa
-    np.save(EMB_DIR / 'article_embeddings.npy', text_embs)
-    np.save(EMB_DIR / 'article_ids.npy', np.array(article_ids_list))
+    # ---------------------------------------------------------
+    # CHẠY PCA NÉN DỮ LIỆU
+    # ---------------------------------------------------------
+    print(f'[{datetime.now().strftime("%H:%M:%S")}] Bắt đầu chạy PCA để nén từ 2048 chiều xuống 32 chiều...')
+    features_array = np.array(features_list)
     
-    print(f'[{datetime.now().strftime("%H:%M:%S")}] Đã lưu text embeddings: {text_embs.shape}')
-    del st_model, text_embs; gc.collect()
+    pca = PCA(n_components=32, random_state=42)
+    features_32d = pca.fit_transform(features_array)
 
-def generate_image_embeddings(article_ids_list, images_dir):
-    """
-    Sử dụng CLIP (OpenAI) để phân tích hình ảnh thực tế của quần áo.
-    Lưu ý: Bạn cần tải thư mục ảnh của H&M về máy trước khi chạy hàm này.
-    """
-    import torch
-    import open_clip
-    from PIL import Image
+    # ---------------------------------------------------------
+    # LƯU RA FILE PARQUET CHO SYSTEM
+    # ---------------------------------------------------------
+    print(f'[{datetime.now().strftime("%H:%M:%S")}] Đang tạo bảng Polars và lưu xuống ổ cứng...')
+    
+    # Tạo tên cột chuẩn xác: img_feat_0 -> img_feat_31
+    cols = [f'img_feat_{i}' for i in range(32)]
+    
+    df_feats = pl.DataFrame(features_32d, schema=cols, orient="row")
+    df_ids = pl.DataFrame({'article_id': valid_article_ids})
 
-    images_path = Path(images_dir)
-    if not images_path.exists():
-        print(f"Lỗi: Không tìm thấy thư mục ảnh tại {images_dir}")
-        return
+    # Gộp cột ID và cột Feature lại
+    final_df = pl.concat([df_ids, df_feats], how="horizontal")
 
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    print(f'[{datetime.now().strftime("%H:%M:%S")}] Khởi động CLIP trên {device}')
+    # Lưu thẳng ra file parquet
+    final_df.write_parquet(out_path)
+    
+    print(f'[{datetime.now().strftime("%H:%M:%S")}] HOÀN TẤT! Đã lưu file tại: {out_path}')
+    print(f'Tỉ lệ phương sai giữ lại được (Explained Variance): {np.sum(pca.explained_variance_ratio_)*100:.2f}%')
 
-    clip_model, _, clip_preprocess = open_clip.create_model_and_transforms('ViT-B-32', pretrained='openai')
-    clip_model = clip_model.to(device).eval()
-
-    IMG_DIM = 512
-    img_embs = np.zeros((len(article_ids_list), IMG_DIM), dtype=np.float32)
-    CLIP_BATCH = 512
-    total = len(article_ids_list)
-    missing = 0
-
-    for start in range(0, total, CLIP_BATCH):
-        batch_ids = article_ids_list[start:start + CLIP_BATCH]
-        imgs = []
-        for aid in batch_ids:
-            img_path = images_path / aid[:3] / f'{aid}.jpg'
-            try:
-                imgs.append(clip_preprocess(Image.open(img_path).convert('RGB')))
-            except Exception:
-                imgs.append(torch.zeros(3, 224, 224))
-                missing += 1
-
-        batch_tensor = torch.stack(imgs).to(device)
-
-        with torch.no_grad(), torch.cuda.amp.autocast():
-            feats = clip_model.encode_image(batch_tensor)
-            feats = feats / feats.norm(dim=-1, keepdim=True)
-            feats = feats.cpu().numpy().astype(np.float32)
-
-        img_embs[start:start + CLIP_BATCH] = feats
-
-        if start % (CLIP_BATCH * 10) == 0:
-            print(f'  CLIP tiến độ: {start}/{total} — VRAM: {torch.cuda.memory_allocated()/1024**3:.1f}GB')
-
-    np.save(EMB_DIR / 'image_embeddings.npy', img_embs)
-    print(f'[{datetime.now().strftime("%H:%M:%S")}] Hoàn thành Image Embeddings. Lỗi/Thiếu ảnh: {missing:,}')
 
 if __name__ == "__main__":
-    # Nạp dữ liệu articles để lấy ID và Text
+    # 1. Nạp dữ liệu (Chỉ cần lấy danh sách sản phẩm)
     _, _, _, articles, _ = load_data()
     
-    # 1. Chạy sinh Vector cho Text (Chỉ tốn CPU/RAM, chạy khá nhanh)
-    generate_text_embeddings(articles)
+    # 2. Cấu hình đường dẫn tới thư mục chứa file ảnh gốc của H&M
+    # BẠN CẦN SỬA DÒNG NÀY THEO MÁY CỦA BẠN:
+    IMAGES_DIR = '/content/drive/MyDrive/inputs2/images' 
     
-    # 2. Chạy sinh Vector cho Ảnh (Cần GPU và tải file ảnh nặng hàng chục GB)
-    # LƯU Ý: Ở file gốc của bạn, quá trình này bị sập (KeyboardInterrupt) do lỗi đường dẫn ảnh hoặc tràn VRAM.
-    # Hãy đảm bảo bạn đã cấu hình thư mục chứa ảnh (vd: /content/images) trước khi mở comment dòng dưới.
-    
-    # article_ids = np.load(EMB_DIR / 'article_ids.npy', allow_pickle=True)
-    # generate_image_embeddings(article_ids, images_dir='/đường/dẫn/đến/thư/mục/ảnh/H&M')
+    # 3. Chạy dây chuyền
+    generate_resnet_pca_embeddings(images_dir=IMAGES_DIR, articles_df=articles)

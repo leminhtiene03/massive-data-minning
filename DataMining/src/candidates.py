@@ -45,11 +45,7 @@ def generate_age_popular(train_tx, customers):
         tx_age.group_by(['age_group', 'article_id']).len()
         .sort(['age_group', 'len'], descending=[False, True])
         .with_columns(pl.col('len').rank(method='ordinal', descending=True).over('age_group').alias('rank'))
-<<<<<<< HEAD
         .filter(pl.col('rank') <= 100) # [ĐÃ SỬA]: Tăng từ 50 lên 100 ứng viên
-=======
-        .filter(pl.col('rank') <= 50)
->>>>>>> 16749963e5caa79fb5f645de6374aa10dce318ff
         .select(['age_group', 'article_id'])
     )
 
@@ -94,12 +90,8 @@ def generate_als(train_tx):
 
     user_ids_90d = list(uid_map.keys())
     user_indices = list(uid_map.values())
-<<<<<<< HEAD
     # [ĐÃ SỬA]: Tăng N=50 lên N=100
     item_ids_arr, _ = als_model.recommend(user_indices, user_item[user_indices], N=100, filter_already_liked_items=True)
-=======
-    item_ids_arr, _ = als_model.recommend(user_indices, user_item[user_indices], N=50, filter_already_liked_items=True)
->>>>>>> 16749963e5caa79fb5f645de6374aa10dce318ff
     
     als_rows = []
     for uid_str, items in zip(user_ids_90d, item_ids_arr):
@@ -121,13 +113,6 @@ def merge_all_candidates(customers):
         CAND_DIR / 'repurchase.parquet',
         CAND_DIR / 'age_popular.parquet',
         CAND_DIR / 'als.parquet',
-<<<<<<< HEAD
-=======
-        # Bạn có thể bật lại embedding_sim.parquet và item_item.parquet khi đã chạy xong các hàm tương ứng
-        # CAND_DIR / 'embedding_sim.parquet',
-        # CAND_DIR / 'global_popular_all.parquet',
-        # CAND_DIR / 'item_item_cands.parquet',
->>>>>>> 16749963e5caa79fb5f645de6374aa10dce318ff
     ]
     existing = [str(p) for p in sources if p.exists()]
     print(f'Đang ghép {len(existing)} file ứng viên...')
@@ -164,12 +149,6 @@ def run_candidate_generation(train_tx, customers):
     generate_age_popular(train_tx, customers)
     generate_als(train_tx)
     
-<<<<<<< HEAD
-=======
-    # Do hàm Global, Item-Item, Embedding Sim khá dài nên tạm ẩn. 
-    # Bạn có thể bổ sung lại logic y hệt như file notebook gốc vào đây.
-    
->>>>>>> 16749963e5caa79fb5f645de6374aa10dce318ff
     final_path = merge_all_candidates(customers)
     return final_path
 
